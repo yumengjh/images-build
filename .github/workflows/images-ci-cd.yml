@@ -1,4 +1,4 @@
-name: Build & Push to ACR
+name: Build and Push to ACR
 
 on:
   push:
@@ -7,19 +7,16 @@ on:
   workflow_dispatch:
     inputs:
       image_name:
-        description: '镜像名称 (namespace/image_name, 例如 my-space/nestapp)'
+        description: '镜像名称（例如 nginx、nestapp）'
         required: false
-        默认: 'yumg/nestapp'
       tag:
-        description: 'Docker 标签 (例如 1.0.0)'
+        description: '镜像版本（例如 1.0.0、latest）'
         required: false
-        默认: '1.0.0'
-      platforms:
-        description: '构建平台 (逗号分隔)'
+      namespace:
+        description: 'ACR 命名空间'
         required: false
-        默认: 'linux/amd64,linux/arm64'
       build_args:
-        description: '构建参数 (key=value,key=value)'
+        description: '构建参数（key=value,key=value）'
         required: false
       context:
         description: '构建上下文路径'
@@ -28,52 +25,56 @@ on:
       dockerfile:
         description: 'Dockerfile 路径'
         required: false
-        默认: './Dockerfile'
+        default: './Dockerfile'
 
 env:
-  DEFAULT_ACR_URL: ${{ secrets.ACR_URL }}        # 例如 crpi-zecblawpygsqdzvu.cn-hongkong.personal.cr.aliyuncs.com
+  DEFAULT_IMAGE_NAME: nestapp
+  DEFAULT_TAG: 1.0.0
+  DEFAULT_NAMESPACE: yumg
+  DEFAULT_ACR_URL: ${{ secrets.ACR_REGISTRY }}
   DEFAULT_ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
   DEFAULT_ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+  DEFAULT_CONTEXT: .
+  DEFAULT_DOCKERFILE: ./Dockerfile
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Prepare variables
-        id: vars
         run: |
-          echo "IMAGE_NAME=${{ github.event.inputs.image_name || 'my-space/nestapp' }}" >> $GITHUB_ENV
-          echo "TAG=${{ github.event.inputs.tag || '1.0.0' }}" >> $GITHUB_ENV
-          echo "PLATFORMS=${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}" >> $GITHUB_ENV
+          echo "IMAGE_NAME=${{ github.event.inputs.image_name || env.DEFAULT_IMAGE_NAME }}" >> $GITHUB_ENV
+          echo "TAG=${{ github.event.inputs.tag || env.DEFAULT_TAG }}" >> $GITHUB_ENV
+          echo "NAMESPACE=${{ github.event.inputs.namespace || env.DEFAULT_NAMESPACE }}" >> $GITHUB_ENV
+          echo "ACR_URL=${{ env.DEFAULT_ACR_URL }}" >> $GITHUB_ENV
+          echo "ACR_USERNAME=${{ env.DEFAULT_ACR_USERNAME }}" >> $GITHUB_ENV
+          echo "ACR_PASSWORD=${{ env.DEFAULT_ACR_PASSWORD }}" >> $GITHUB_ENV
           echo "BUILD_ARGS=${{ github.event.inputs.build_args }}" >> $GITHUB_ENV
-          echo "CONTEXT=${{ github.event.inputs.context || '.' }}" >> $GITHUB_ENV
-          echo "DOCKERFILE=${{ github.event.inputs.dockerfile || './Dockerfile' }}" >> $GITHUB_ENV
-          echo "ACR_URL=${{ secrets.ACR_URL }}" >> $GITHUB_ENV
-          echo "ACR_USERNAME=${{ secrets.ACR_USERNAME }}" >> $GITHUB_ENV
-          echo "ACR_PASSWORD=${{ secrets.ACR_PASSWORD }}" >> $GITHUB_ENV
+          echo "CONTEXT=${{ github.event.inputs.context || env.DEFAULT_CONTEXT }}" >> $GITHUB_ENV
+          echo "DOCKERFILE=${{ github.event.inputs.dockerfile || env.DEFAULT_DOCKERFILE }}" >> $GITHUB_ENV
 
       - name: Show build configuration
         run: |
           echo "-------------------------------------------"
           echo "ACR URL:       $ACR_URL"
+          echo "Namespace:     $NAMESPACE"
           echo "Image:         $IMAGE_NAME"
           echo "Tag:           $TAG"
-          echo "Platforms:     $PLATFORMS"
-          echo "Dockerfile:    $DOCKERFILE"
           echo "Context:       $CONTEXT"
+          echo "Dockerfile:    $DOCKERFILE"
           echo "Build Args:    $BUILD_ARGS"
           echo "-------------------------------------------"
 
       - name: Login to ACR
         run: |
-          echo "$ACR_PASSWORD" | docker login --username "$ACR_USERNAME" --password-stdin "$ACR_URL"
+          echo "$ACR_PASSWORD" | docker login $ACR_URL -u $ACR_USERNAME --password-stdin
 
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
@@ -81,19 +82,16 @@ jobs:
           context: ${{ env.CONTEXT }}
           file: ${{ env.DOCKERFILE }}
           push: true
-          platforms: ${{ env.PLATFORMS }}
+          platforms: linux/amd64,linux/arm64
           tags: |
-            $ACR_URL/${{ env.IMAGE_NAME }}:${{ env.TAG }}
-            $ACR_URL/${{ env.IMAGE_NAME }}:latest
+            ${{ env.ACR_URL }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+            ${{ env.ACR_URL }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
           build-args: ${{ env.BUILD_ARGS }}
 
       - name: Build summary
         if: success()
         run: |
           echo "-------------------------------------------"
-          echo "Build and push to ACR completed successfully."
-          echo "ACR URL:   $ACR_URL"
-          echo "Image:     $IMAGE_NAME"
-          echo "Tag:       $TAG"
-          echo "Platforms: $PLATFORMS"
+          echo "Build and push to ACR completed successfully!"
+          echo "Image: $ACR_URL/$NAMESPACE/$IMAGE_NAME:$TAG"
           echo "-------------------------------------------"
