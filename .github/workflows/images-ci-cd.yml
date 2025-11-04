@@ -1,4 +1,4 @@
-name: Build and Push to GHCR
+name: Build & Push to ACR
 
 on:
   push:
@@ -9,103 +9,43 @@ on:
   workflow_dispatch:
     inputs:
       image_name:
-        description: 'Docker image name (e.g., nestapp)'
+        description: 'Docker image name'
         required: false
-        默认: yumengjh/nestapp
+        默认: nestapp
       tag:
-        description: 'Docker tag (e.g., 1.0.0)'
+        description: 'Docker tag'
         required: false
         默认: 1.0.0
       platforms:
         description: 'Build platforms (comma separated)'
         required: false
-        默认: 'linux/amd64,linux/arm64'
-      build_args:
-        description: 'Build arguments (key=value,key=value)'
-        required: false
-      context:
-        description: 'Build context path'
-        required: false
-        默认: '.'
-      dockerfile:
-        description: 'Dockerfile path'
-        required: false
-        默认: './Dockerfile'
+        默认: linux/amd64,linux/arm64
 
 env:
-  DEFAULT_REGISTRY_URL: ghcr.io
-  DEFAULT_REGISTRY_USERNAME: ${{ github.actor }}
-  DEFAULT_REGISTRY_PASSWORD: ${{ secrets.GH_TOKEN }}
+  ACR_URL: ${{ secrets.ACR_REGISTRY }}
+  ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+  ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Prepare variables
-        id: vars
+      - name: Login to ACR
         run: |
-          # 设置默认值
-          IMAGE_NAME="${{ github.event.inputs.image_name || 'yumengjh/nestapp' }}"
-          TAG="${{ github.event.inputs.tag || '1.0.0' }}"
-          PLATFORMS="${{ github.event.inputs.platforms || 'linux/amd64,linux/arm64' }}"
-          CONTEXT="${{ github.event.inputs.context || '.' }}"
-          DOCKERFILE="${{ github.event.inputs.dockerfile || './Dockerfile' }}"
-          BUILD_ARGS="${{ github.event.inputs.build_args }}"
-
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
-          echo "TAG=$TAG" >> $GITHUB_ENV
-          echo "PLATFORMS=$PLATFORMS" >> $GITHUB_ENV
-          echo "CONTEXT=$CONTEXT" >> $GITHUB_ENV
-          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
-          echo "BUILD_ARGS=$BUILD_ARGS" >> $GITHUB_ENV
-
-          # Registry info
-          echo "REGISTRY_URL=${{ env.DEFAULT_REGISTRY_URL }}" >> $GITHUB_ENV
-          echo "REGISTRY_USERNAME=${{ env.DEFAULT_REGISTRY_USERNAME }}" >> $GITHUB_ENV
-          echo "REGISTRY_PASSWORD=${{ env.DEFAULT_REGISTRY_PASSWORD }}" >> $GITHUB_ENV
-
-      - name: Show build configuration
-        run: |
-          echo "-------------------------------------------"
-          echo "Registry URL:  $REGISTRY_URL"
-          echo "Image:         $IMAGE_NAME"
-          echo "Tag:           $TAG"
-          echo "Platforms:     $PLATFORMS"
-          echo "Context:       $CONTEXT"
-          echo "Dockerfile:    $DOCKERFILE"
-          echo "Build Args:    $BUILD_ARGS"
-          echo "-------------------------------------------"
-
-      - name: Login to GHCR
-        run: |
-          echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" --password-stdin
+          echo "$ACR_PASSWORD" | docker login $ACR_URL -u $ACR_USERNAME --password-stdin
 
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
         with:
-          context: ${{ env.CONTEXT }}
-          file: ${{ env.DOCKERFILE }}
+          context: .
+          file: ./Dockerfile
           push: true
-          platforms: ${{ env.PLATFORMS }}
+          platforms: ${{ github.event.inputs.platforms }}
           tags: |
-            ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
-            ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
-          build-args: ${{ env.BUILD_ARGS }}
-
-      - name: Build summary
-        if: success()
-        run: |
-          echo "-------------------------------------------"
-          echo "Build and push completed successfully."
-          echo "Registry URL:  $REGISTRY_URL"
-          echo "Image:         $IMAGE_NAME"
-          echo "Tag:           $TAG"
-          echo "Platforms:     $PLATFORMS"
-          echo "-------------------------------------------"
+            $ACR_URL/${{ github.event.inputs.image_name }}:${{ github.event.inputs.tag }}
+            $ACR_URL/${{ github.event.inputs.image_name }}:latest
