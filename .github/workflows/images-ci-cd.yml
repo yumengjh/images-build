@@ -42,7 +42,7 @@ on:
         default: './Dockerfile'
 
 env:
-  DEFAULT_IMAGE_NAME: nestapp
+  DEFAULT_IMAGE_NAME: yumengjh/nestapp
   DEFAULT_TAG: 1.0.0
   DEFAULT_REGISTRY_URL: ghcr.io
   DEFAULT_REGISTRY_USERNAME: ${{ github.actor }}
