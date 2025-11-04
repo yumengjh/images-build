@@ -1,0 +1,127 @@
+name: Universal CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - release/*
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      image_name:
+        description: 'Docker image name (e.g., yumeng/myapp)'
+        required: false
+      tag:
+        description: 'Docker tag (e.g., latest, v1.0.0)'
+        required: false
+      registry:
+        description: 'Target registry (dockerhub|ghcr|acr|custom)'
+        required: false
+      platforms:
+        description: 'Build platforms (comma separated)'
+        required: false
+        default: 'linux/amd64,linux/arm64'
+      build_args:
+        description: 'Build arguments (key=value,key=value)'
+        required: false
+      context:
+        description: 'Build context path'
+        required: false
+        default: '.'
+      dockerfile:
+        description: 'Dockerfile path'
+        required: false
+        default: './Dockerfile'
+
+env:
+  DEFAULT_IMAGE_NAME: yueng/nestapp
+  DEFAULT_TAG: 1.0.0
+  DEFAULT_REGISTRY: ghcr
+  DEFAULT_PLATFORMS: linux/amd64,linux/arm64
+  DEFAULT_CONTEXT: .
+  DEFAULT_DOCKERFILE: ./dockerfile
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare variables
+        id: vars
+        run: |
+          echo "IMAGE_NAME=${{ github.event.inputs.image_name || env.DEFAULT_IMAGE_NAME }}" >> $GITHUB_ENV
+          echo "TAG=${{ github.event.inputs.tag || env.DEFAULT_TAG }}" >> $GITHUB_ENV
+          echo "REGISTRY=${{ github.event.inputs.registry || env.DEFAULT_REGISTRY }}" >> $GITHUB_ENV
+          echo "PLATFORMS=${{ github.event.inputs.platforms || env.DEFAULT_PLATFORMS }}" >> $GITHUB_ENV
+          echo "BUILD_ARGS=${{ github.event.inputs.build_args }}" >> $GITHUB_ENV
+          echo "CONTEXT=${{ github.event.inputs.context || env.DEFAULT_CONTEXT }}" >> $GITHUB_ENV
+          echo "DOCKERFILE=${{ github.event.inputs.dockerfile || env.DEFAULT_DOCKERFILE }}" >> $GITHUB_ENV
+
+      - name: Show build configuration
+        run: |
+          echo "-------------------------------------------"
+          echo "Registry:   $REGISTRY"
+          echo "Image:      $IMAGE_NAME"
+          echo "Tag:        $TAG"
+          echo "Platforms:  $PLATFORMS"
+          echo "Context:    $CONTEXT"
+          echo "Dockerfile: $DOCKERFILE"
+          echo "-------------------------------------------"
+
+      - name: Login to Container Registry
+        run: |
+          case "$REGISTRY" in
+            dockerhub)
+              echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+              ;;
+            ghcr)
+              echo "${{ secrets.GH_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+              ;;
+            acr)
+              echo "${{ secrets.ACR_PASSWORD }}" | docker login "${{ secrets.ACR_REGISTRY }}" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+              ;;
+            custom)
+              echo "${{ secrets.CUSTOM_REGISTRY_PASSWORD }}" | docker login "${{ secrets.CUSTOM_REGISTRY_URL }}" -u "${{ secrets.CUSTOM_REGISTRY_USERNAME }}" --password-stdin
+              ;;
+            *)
+              echo "Unknown registry: $REGISTRY"
+              exit 1
+              ;;
+          esac
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.CONTEXT }}
+          file: ${{ env.DOCKERFILE }}
+          push: true
+          platforms: ${{ env.PLATFORMS }}
+          tags: |
+            ${{ (env.REGISTRY == 'ghcr' && format('ghcr.io/{0}:{1}', env.IMAGE_NAME, env.TAG)) ||
+                 (env.REGISTRY == 'dockerhub' && format('{0}:{1}', env.IMAGE_NAME, env.TAG)) ||
+                 (env.REGISTRY == 'acr' && format('{0}/{1}:{2}', secrets.ACR_REGISTRY, env.IMAGE_NAME, env.TAG)) ||
+                 (env.REGISTRY == 'custom' && format('{0}/{1}:{2}', secrets.CUSTOM_REGISTRY_URL, env.IMAGE_NAME, env.TAG)) }}
+            ${{ (env.REGISTRY == 'ghcr' && format('ghcr.io/{0}:latest', env.IMAGE_NAME)) ||
+                 (env.REGISTRY == 'dockerhub' && format('{0}:latest', env.IMAGE_NAME)) ||
+                 (env.REGISTRY == 'acr' && format('{0}/{1}:latest', secrets.ACR_REGISTRY, env.IMAGE_NAME)) ||
+                 (env.REGISTRY == 'custom' && format('{0}/{1}:latest', secrets.CUSTOM_REGISTRY_URL, env.IMAGE_NAME)) }}
+          build-args: ${{ env.BUILD_ARGS }}
+
+      - name: Build summary
+        if: success()
+        run: |
+          echo "-------------------------------------------"
+          echo "Build and push completed successfully."
+          echo "Registry:   $REGISTRY"
+          echo "Image:      $IMAGE_NAME"
+          echo "Tag:        $TAG"
+          echo "Platforms:  $PLATFORMS"
+          echo "-------------------------------------------"
