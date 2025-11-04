@@ -1,156 +1,51 @@
-name: Universal CI/CD Pipeline
+name: Build & Push to GHCR
 
 on:
   push:
     branches:
+      - main
+      - master
       - release/*
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       image_name:
-        description: 'Docker image name (e.g., myapp)'
+        description: 'Docker image name'
         required: false
+        默认: yumengjh/nestapp
       tag:
-        description: 'Docker tag (e.g., v1.0.0)'
+        description: 'Docker tag'
         required: false
-      registry_type:
-        description: 'Registry type (ghcr|dockerhub|acr|custom)'
-        required: false
-        default: 'ghcr'
-      registry_url:
-        description: 'Docker registry URL (覆盖默认 URL)'
-        required: false
-      registry_username:
-        description: 'Docker registry username'
-        required: false
-      registry_password:
-        description: 'Docker registry password'
-        required: false
+        默认: 1.0.0
       platforms:
         description: 'Build platforms (comma separated)'
         required: false
-        default: 'linux/amd64,linux/arm64'
-      build_args:
-        description: 'Build arguments (key=value,key=value)'
-        required: false
-      context:
-        description: 'Build context path'
-        required: false
-        default: '.'
-      dockerfile:
-        description: 'Dockerfile path'
-        required: false
-        default: './Dockerfile'
+        默认: linux/amd64,linux/arm64
 
 env:
-  DEFAULT_IMAGE_NAME: yumengjh/nestapp
-  DEFAULT_TAG: 1.0.0
-  DEFAULT_REGISTRY_TYPE: ghcr
-  DEFAULT_GHCR_URL: ghcr.io
-  DEFAULT_GHCR_USERNAME: ${{ github.actor }}
-  DEFAULT_GHCR_PASSWORD: ${{ secrets.GH_TOKEN }}
-  DEFAULT_DOCKERHUB_URL: docker.io
-  DEFAULT_DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-  DEFAULT_DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
-  DEFAULT_ACR_URL: ${{ secrets.ACR_REGISTRY }}
-  DEFAULT_ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-  DEFAULT_ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
-  DEFAULT_PLATFORMS: linux/amd64,linux/arm64
-  DEFAULT_CONTEXT: .
-  DEFAULT_DOCKERFILE: ./Dockerfile
+  GHCR_URL: ghcr.io
+  GHCR_USERNAME: ${{ github.actor }}
+  GHCR_PASSWORD: ${{ secrets.GH_TOKEN }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Prepare variables
-        id: vars
+      - name: Login to GHCR
         run: |
-          IMAGE_NAME="${{ github.event.inputs.image_name || env.DEFAULT_IMAGE_NAME }}"
-          TAG="${{ github.event.inputs.tag || env.DEFAULT_TAG }}"
-          REGISTRY_TYPE="${{ github.event.inputs.registry_type || env.DEFAULT_REGISTRY_TYPE }}"
-          PLATFORMS="${{ github.event.inputs.platforms || env.DEFAULT_PLATFORMS }}"
-          BUILD_ARGS="${{ github.event.inputs.build_args || '' }}"
-          CONTEXT="${{ github.event.inputs.context || env.DEFAULT_CONTEXT }}"
-          DOCKERFILE="${{ github.event.inputs.dockerfile || env.DEFAULT_DOCKERFILE }}"
-
-          # 根据类型设置 URL/用户名/密码
-          if [ "$REGISTRY_TYPE" = "ghcr" ]; then
-            REGISTRY_URL="${{ github.event.inputs.registry_url || env.DEFAULT_GHCR_URL }}"
-            REGISTRY_USERNAME="${{ github.event.inputs.registry_username || env.DEFAULT_GHCR_USERNAME }}"
-            REGISTRY_PASSWORD="${{ github.event.inputs.registry_password || env.DEFAULT_GHCR_PASSWORD }}"
-          elif [ "$REGISTRY_TYPE" = "dockerhub" ]; then
-            REGISTRY_URL="${{ github.event.inputs.registry_url || env.DEFAULT_DOCKERHUB_URL }}"
-            REGISTRY_USERNAME="${{ github.event.inputs.registry_username || env.DEFAULT_DOCKERHUB_USERNAME }}"
-            REGISTRY_PASSWORD="${{ github.event.inputs.registry_password || env.DEFAULT_DOCKERHUB_PASSWORD }}"
-          elif [ "$REGISTRY_TYPE" = "acr" ]; then
-            REGISTRY_URL="${{ github.event.inputs.registry_url || env.DEFAULT_ACR_URL }}"
-            REGISTRY_USERNAME="${{ github.event.inputs.registry_username || env.DEFAULT_ACR_USERNAME }}"
-            REGISTRY_PASSWORD="${{ github.event.inputs.registry_password || env.DEFAULT_ACR_PASSWORD }}"
-          else
-            # custom
-            REGISTRY_URL="${{ github.event.inputs.registry_url }}"
-            REGISTRY_USERNAME="${{ github.event.inputs.registry_username }}"
-            REGISTRY_PASSWORD="${{ github.event.inputs.registry_password }}"
-          fi
-
-          # 导出到环境变量
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
-          echo "TAG=$TAG" >> $GITHUB_ENV
-          echo "REGISTRY_TYPE=$REGISTRY_TYPE" >> $GITHUB_ENV
-          echo "REGISTRY_URL=$REGISTRY_URL" >> $GITHUB_ENV
-          echo "REGISTRY_USERNAME=$REGISTRY_USERNAME" >> $GITHUB_ENV
-          echo "REGISTRY_PASSWORD=$REGISTRY_PASSWORD" >> $GITHUB_ENV
-          echo "PLATFORMS=$PLATFORMS" >> $GITHUB_ENV
-          echo "BUILD_ARGS=$BUILD_ARGS" >> $GITHUB_ENV
-          echo "CONTEXT=$CONTEXT" >> $GITHUB_ENV
-          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
-
-      - name: Show build configuration
-        run: |
-          echo "-------------------------------------------"
-          echo "Registry Type: $REGISTRY_TYPE"
-          echo "Registry URL:  $REGISTRY_URL"
-          echo "Image:         $IMAGE_NAME"
-          echo "Tag:           $TAG"
-          echo "Platforms:     $PLATFORMS"
-          echo "Context:       $CONTEXT"
-          echo "Dockerfile:    $DOCKERFILE"
-          echo "Build Args:    $BUILD_ARGS"
-          echo "-------------------------------------------"
-
-      - name: Login to Docker Registry
-        run: |
-          echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" --password-stdin
+          echo "$GHCR_PASSWORD" | docker login $GHCR_URL -u $GHCR_USERNAME --password-stdin
 
       - name: Build and push multi-arch image
         uses: docker/build-push-action@v6
         with:
-          context: ${{ env.CONTEXT }}
-          file: ${{ env.DOCKERFILE }}
+          context: .
+          file: ./Dockerfile
           push: true
-          platforms: ${{ env.PLATFORMS }}
+          platforms: ${{ github.event.inputs.platforms }}
           tags: |
-            ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
-            ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
-          build-args: ${{ env.BUILD_ARGS }}
-
-      - name: Build summary
-        if: success()
-        run: |
-          echo "-------------------------------------------"
-          echo "Build and push completed successfully."
-          echo "Registry Type: $REGISTRY_TYPE"
-          echo "Registry URL:  $REGISTRY_URL"
-          echo "Image:         $IMAGE_NAME"
-          echo "Tag:           $TAG"
-          echo "Platforms:     $PLATFORMS"
-          echo "-------------------------------------------"
+            $GHCR_URL/${{ github.event.inputs.image_name }}:${{ github.event.inputs.tag }}
+            $GHCR_URL/${{ github.event.inputs.image_name }}:latest
