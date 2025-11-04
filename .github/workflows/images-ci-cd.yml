@@ -3,8 +3,6 @@ name: Universal CI/CD Pipeline
 on:
   push:
     branches:
-      - main
-      - master
       - release/*
   release:
     types: [published]
@@ -76,34 +74,45 @@ jobs:
       - name: Prepare variables
         id: vars
         run: |
-          # 基本变量
-          echo "IMAGE_NAME=${{ github.event.inputs.image_name || env.DEFAULT_IMAGE_NAME }}" >> $GITHUB_ENV
-          echo "TAG=${{ github.event.inputs.tag || env.DEFAULT_TAG }}" >> $GITHUB_ENV
-          echo "REGISTRY_TYPE=${{ github.event.inputs.registry_type || env.DEFAULT_REGISTRY_TYPE }}" >> $GITHUB_ENV
-          echo "PLATFORMS=${{ github.event.inputs.platforms || env.DEFAULT_PLATFORMS }}" >> $GITHUB_ENV
-          echo "BUILD_ARGS=${{ github.event.inputs.build_args }}" >> $GITHUB_ENV
-          echo "CONTEXT=${{ github.event.inputs.context || env.DEFAULT_CONTEXT }}" >> $GITHUB_ENV
-          echo "DOCKERFILE=${{ github.event.inputs.dockerfile || env.DEFAULT_DOCKERFILE }}" >> $GITHUB_ENV
+          IMAGE_NAME="${{ github.event.inputs.image_name || env.DEFAULT_IMAGE_NAME }}"
+          TAG="${{ github.event.inputs.tag || env.DEFAULT_TAG }}"
+          REGISTRY_TYPE="${{ github.event.inputs.registry_type || env.DEFAULT_REGISTRY_TYPE }}"
+          PLATFORMS="${{ github.event.inputs.platforms || env.DEFAULT_PLATFORMS }}"
+          BUILD_ARGS="${{ github.event.inputs.build_args || '' }}"
+          CONTEXT="${{ github.event.inputs.context || env.DEFAULT_CONTEXT }}"
+          DOCKERFILE="${{ github.event.inputs.dockerfile || env.DEFAULT_DOCKERFILE }}"
 
-          # 根据类型设置默认 URL/用户名/密码
-          if [ "${{ github.event.inputs.registry_type }}" = "ghcr" ] || [ -z "${{ github.event.inputs.registry_type }}" ]; then
-            echo "REGISTRY_URL=${{ github.event.inputs.registry_url || env.DEFAULT_GHCR_URL }}" >> $GITHUB_ENV
-            echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username || env.DEFAULT_GHCR_USERNAME }}" >> $GITHUB_ENV
-            echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password || env.DEFAULT_GHCR_PASSWORD }}" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.registry_type }}" = "dockerhub" ]; then
-            echo "REGISTRY_URL=${{ github.event.inputs.registry_url || env.DEFAULT_DOCKERHUB_URL }}" >> $GITHUB_ENV
-            echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username || env.DEFAULT_DOCKERHUB_USERNAME }}" >> $GITHUB_ENV
-            echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password || env.DEFAULT_DOCKERHUB_PASSWORD }}" >> $GITHUB_ENV
-          elif [ "${{ github.event.inputs.registry_type }}" = "acr" ]; then
-            echo "REGISTRY_URL=${{ github.event.inputs.registry_url || env.DEFAULT_ACR_URL }}" >> $GITHUB_ENV
-            echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username || env.DEFAULT_ACR_USERNAME }}" >> $GITHUB_ENV
-            echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password || env.DEFAULT_ACR_PASSWORD }}" >> $GITHUB_ENV
+          # 根据类型设置 URL/用户名/密码
+          if [ "$REGISTRY_TYPE" = "ghcr" ]; then
+            REGISTRY_URL="${{ github.event.inputs.registry_url || env.DEFAULT_GHCR_URL }}"
+            REGISTRY_USERNAME="${{ github.event.inputs.registry_username || env.DEFAULT_GHCR_USERNAME }}"
+            REGISTRY_PASSWORD="${{ github.event.inputs.registry_password || env.DEFAULT_GHCR_PASSWORD }}"
+          elif [ "$REGISTRY_TYPE" = "dockerhub" ]; then
+            REGISTRY_URL="${{ github.event.inputs.registry_url || env.DEFAULT_DOCKERHUB_URL }}"
+            REGISTRY_USERNAME="${{ github.event.inputs.registry_username || env.DEFAULT_DOCKERHUB_USERNAME }}"
+            REGISTRY_PASSWORD="${{ github.event.inputs.registry_password || env.DEFAULT_DOCKERHUB_PASSWORD }}"
+          elif [ "$REGISTRY_TYPE" = "acr" ]; then
+            REGISTRY_URL="${{ github.event.inputs.registry_url || env.DEFAULT_ACR_URL }}"
+            REGISTRY_USERNAME="${{ github.event.inputs.registry_username || env.DEFAULT_ACR_USERNAME }}"
+            REGISTRY_PASSWORD="${{ github.event.inputs.registry_password || env.DEFAULT_ACR_PASSWORD }}"
           else
             # custom
-            echo "REGISTRY_URL=${{ github.event.inputs.registry_url }}" >> $GITHUB_ENV
-            echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username }}" >> $GITHUB_ENV
-            echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password }}" >> $GITHUB_ENV
+            REGISTRY_URL="${{ github.event.inputs.registry_url }}"
+            REGISTRY_USERNAME="${{ github.event.inputs.registry_username }}"
+            REGISTRY_PASSWORD="${{ github.event.inputs.registry_password }}"
           fi
+
+          # 导出到环境变量
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "REGISTRY_TYPE=$REGISTRY_TYPE" >> $GITHUB_ENV
+          echo "REGISTRY_URL=$REGISTRY_URL" >> $GITHUB_ENV
+          echo "REGISTRY_USERNAME=$REGISTRY_USERNAME" >> $GITHUB_ENV
+          echo "REGISTRY_PASSWORD=$REGISTRY_PASSWORD" >> $GITHUB_ENV
+          echo "PLATFORMS=$PLATFORMS" >> $GITHUB_ENV
+          echo "BUILD_ARGS=$BUILD_ARGS" >> $GITHUB_ENV
+          echo "CONTEXT=$CONTEXT" >> $GITHUB_ENV
+          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
 
       - name: Show build configuration
         run: |
@@ -129,7 +138,7 @@ jobs:
           file: ${{ env.DOCKERFILE }}
           push: true
           platforms: ${{ env.PLATFORMS }}
-          标签: |
+          tags: |
             ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
             ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
           build-args: ${{ env.BUILD_ARGS }}
