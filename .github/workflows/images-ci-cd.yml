@@ -16,8 +16,12 @@ on:
       tag:
         description: 'Docker tag (e.g., v1.0.0)'
         required: false
+      registry_type:
+        description: 'Registry type (ghcr|dockerhub|acr|custom)'
+        required: false
+        default: 'ghcr'
       registry_url:
-        description: 'Docker registry URL'
+        description: 'Docker registry URL (覆盖默认 URL)'
         required: false
       registry_username:
         description: 'Docker registry username'
@@ -28,7 +32,7 @@ on:
       platforms:
         description: 'Build platforms (comma separated)'
         required: false
-        默认: 'linux/amd64,linux/arm64'
+        default: 'linux/amd64,linux/arm64'
       build_args:
         description: 'Build arguments (key=value,key=value)'
         required: false
@@ -44,9 +48,16 @@ on:
 env:
   DEFAULT_IMAGE_NAME: yumengjh/nestapp
   DEFAULT_TAG: 1.0.0
-  DEFAULT_REGISTRY_URL: ghcr.io
-  DEFAULT_REGISTRY_USERNAME: ${{ github.actor }}
-  DEFAULT_REGISTRY_PASSWORD: ${{ secrets.GH_TOKEN }}
+  DEFAULT_REGISTRY_TYPE: ghcr
+  DEFAULT_GHCR_URL: ghcr.io
+  DEFAULT_GHCR_USERNAME: ${{ github.actor }}
+  DEFAULT_GHCR_PASSWORD: ${{ secrets.GH_TOKEN }}
+  DEFAULT_DOCKERHUB_URL: docker.io
+  DEFAULT_DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DEFAULT_DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+  DEFAULT_ACR_URL: ${{ secrets.ACR_REGISTRY }}
+  DEFAULT_ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+  DEFAULT_ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
   DEFAULT_PLATFORMS: linux/amd64,linux/arm64
   DEFAULT_CONTEXT: .
   DEFAULT_DOCKERFILE: ./Dockerfile
@@ -65,26 +76,46 @@ jobs:
       - name: Prepare variables
         id: vars
         run: |
+          # 基本变量
           echo "IMAGE_NAME=${{ github.event.inputs.image_name || env.DEFAULT_IMAGE_NAME }}" >> $GITHUB_ENV
           echo "TAG=${{ github.event.inputs.tag || env.DEFAULT_TAG }}" >> $GITHUB_ENV
-          echo "REGISTRY_URL=${{ github.event.inputs.registry_url || env.DEFAULT_REGISTRY_URL }}" >> $GITHUB_ENV
-          echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username || env.DEFAULT_REGISTRY_USERNAME }}" >> $GITHUB_ENV
-          echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password || env.DEFAULT_REGISTRY_PASSWORD }}" >> $GITHUB_ENV
+          echo "REGISTRY_TYPE=${{ github.event.inputs.registry_type || env.DEFAULT_REGISTRY_TYPE }}" >> $GITHUB_ENV
           echo "PLATFORMS=${{ github.event.inputs.platforms || env.DEFAULT_PLATFORMS }}" >> $GITHUB_ENV
           echo "BUILD_ARGS=${{ github.event.inputs.build_args }}" >> $GITHUB_ENV
           echo "CONTEXT=${{ github.event.inputs.context || env.DEFAULT_CONTEXT }}" >> $GITHUB_ENV
           echo "DOCKERFILE=${{ github.event.inputs.dockerfile || env.DEFAULT_DOCKERFILE }}" >> $GITHUB_ENV
 
+          # 根据类型设置默认 URL/用户名/密码
+          if [ "${{ github.event.inputs.registry_type }}" = "ghcr" ] || [ -z "${{ github.event.inputs.registry_type }}" ]; then
+            echo "REGISTRY_URL=${{ github.event.inputs.registry_url || env.DEFAULT_GHCR_URL }}" >> $GITHUB_ENV
+            echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username || env.DEFAULT_GHCR_USERNAME }}" >> $GITHUB_ENV
+            echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password || env.DEFAULT_GHCR_PASSWORD }}" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.registry_type }}" = "dockerhub" ]; then
+            echo "REGISTRY_URL=${{ github.event.inputs.registry_url || env.DEFAULT_DOCKERHUB_URL }}" >> $GITHUB_ENV
+            echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username || env.DEFAULT_DOCKERHUB_USERNAME }}" >> $GITHUB_ENV
+            echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password || env.DEFAULT_DOCKERHUB_PASSWORD }}" >> $GITHUB_ENV
+          elif [ "${{ github.event.inputs.registry_type }}" = "acr" ]; then
+            echo "REGISTRY_URL=${{ github.event.inputs.registry_url || env.DEFAULT_ACR_URL }}" >> $GITHUB_ENV
+            echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username || env.DEFAULT_ACR_USERNAME }}" >> $GITHUB_ENV
+            echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password || env.DEFAULT_ACR_PASSWORD }}" >> $GITHUB_ENV
+          else
+            # custom
+            echo "REGISTRY_URL=${{ github.event.inputs.registry_url }}" >> $GITHUB_ENV
+            echo "REGISTRY_USERNAME=${{ github.event.inputs.registry_username }}" >> $GITHUB_ENV
+            echo "REGISTRY_PASSWORD=${{ github.event.inputs.registry_password }}" >> $GITHUB_ENV
+          fi
+
       - name: Show build configuration
         run: |
           echo "-------------------------------------------"
-          echo "Registry URL: $REGISTRY_URL"
-          echo "Image:        $IMAGE_NAME"
-          echo "Tag:          $TAG"
-          echo "Platforms:    $PLATFORMS"
-          echo "Context:      $CONTEXT"
-          echo "Dockerfile:   $DOCKERFILE"
-          echo "Build Args:   $BUILD_ARGS"
+          echo "Registry Type: $REGISTRY_TYPE"
+          echo "Registry URL:  $REGISTRY_URL"
+          echo "Image:         $IMAGE_NAME"
+          echo "Tag:           $TAG"
+          echo "Platforms:     $PLATFORMS"
+          echo "Context:       $CONTEXT"
+          echo "Dockerfile:    $DOCKERFILE"
+          echo "Build Args:    $BUILD_ARGS"
           echo "-------------------------------------------"
 
       - name: Login to Docker Registry
@@ -98,7 +129,7 @@ jobs:
           file: ${{ env.DOCKERFILE }}
           push: true
           platforms: ${{ env.PLATFORMS }}
-          tags: |
+          标签: |
             ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
             ${{ env.REGISTRY_URL }}/${{ env.IMAGE_NAME }}:latest
           build-args: ${{ env.BUILD_ARGS }}
@@ -108,8 +139,9 @@ jobs:
         run: |
           echo "-------------------------------------------"
           echo "Build and push completed successfully."
-          echo "Registry URL: $REGISTRY_URL"
-          echo "Image:        $IMAGE_NAME"
-          echo "Tag:          $TAG"
-          echo "Platforms:    $PLATFORMS"
+          echo "Registry Type: $REGISTRY_TYPE"
+          echo "Registry URL:  $REGISTRY_URL"
+          echo "Image:         $IMAGE_NAME"
+          echo "Tag:           $TAG"
+          echo "Platforms:     $PLATFORMS"
           echo "-------------------------------------------"
